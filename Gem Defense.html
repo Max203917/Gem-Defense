@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Gem Defense</title>
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+    font-family:Arial;
+    color:white;
+}
+canvas{
+    display:block;
+    background:#111;
+}
+#score,#healCounter,#modeText,#controlsHelp{
+    position:absolute;
+    z-index:5;
+    display:none;
+    font-size:28px;
+}
+#score{top:20px; left:20px;}
+#healCounter{top:60px; left:20px; color:lime;}
+#modeText{
+    top:20px;
+    left:50%;
+    transform:translateX(-50%);
+    color:yellow;
+}
+#controlsHelp{
+    left:20px;
+    bottom:20px;
+    font-size:22px;
+    white-space:pre-line;
+    color:cyan;
+}
+.menu{
+    position:absolute;
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    background:rgba(0,0,0,0.9);
+    z-index:10;
+}
+h1{
+    color:cyan;
+    font-size:70px;
+    text-shadow:0 0 20px purple;
+}
+button{
+    padding:15px 40px;
+    font-size:28px;
+    margin:10px;
+    border:none;
+    border-radius:12px;
+    cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="score">Очки: 0</div>
+<div id="healCounter">До ❤️: 50</div>
+<div id="modeText"></div>
+
+<div id="controlsHelp">Управлениє
+W A S D
+↑ ← ↓ →</div>
+
+<div id="mainMenu" class="menu">
+    <h1>Gem Defense</h1>
+    <button onclick="showDifficulty()">Грати</button>
+</div>
+
+<div id="difficultyMenu" class="menu" style="display:none;">
+    <h1>Складність</h1>
+    <button onclick="startGame('normal')">Нормальний</button>
+    <button onclick="startGame('crazy')">Неадекватний</button>
+    <button onclick="backToDifficultyMenu()">Назад</button>
+</div>
+
+<div id="gameOverMenu" class="menu" style="display:none;">
+    <h1>GAME OVER</h1>
+    <button onclick="restartGame()">Почати заново</button>
+    <button onclick="backToMenu()">В меню</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+const scoreText=document.getElementById("score");
+const healText=document.getElementById("healCounter");
+const modeText=document.getElementById("modeText");
+const controlsHelp=document.getElementById("controlsHelp");
+
+const mainMenu=document.getElementById("mainMenu");
+const difficultyMenu=document.getElementById("difficultyMenu");
+const gameOverMenu=document.getElementById("gameOverMenu");
+
+const center={x:0,y:0};
+const targets={up:{},down:{},left:{},right:{}};
+const pulse={up:0,down:0,left:0,right:0};
+
+let score=0;
+let lives=5;
+const maxLives=5;
+
+let gameRunning=false;
+let projectiles=[];
+let explosions=[];
+let projectileSpeed=3;
+let crystalDestroyed=false;
+let gameMode="normal";
+
+let crazyKeys={};
+let showCrazyLetters=true;
+let spawnBlocked=false;
+
+function randomLetter(excluded=[]){
+    const letters="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
+        .filter(x=>!excluded.includes(x));
+    return letters[Math.floor(Math.random()*letters.length)];
+}
+
+function generateCrazyKeys(){
+    let used=[];
+    crazyKeys.up=randomLetter(used); used.push(crazyKeys.up);
+    crazyKeys.down=randomLetter(used); used.push(crazyKeys.down);
+    crazyKeys.left=randomLetter(used); used.push(crazyKeys.left);
+    crazyKeys.right=randomLetter(used);
+}
+
+function startCrazyCountdown(){
+    let time=15;
+    spawnBlocked=true;
+    showCrazyLetters=true;
+
+    modeText.style.display="block";
+    modeText.innerText="Запам'ятай ("+time+")";
+
+    let timer=setInterval(()=>{
+        time--;
+        modeText.innerText="Запам'ятай ("+time+")";
+
+        if(time<=0){
+            clearInterval(timer);
+            spawnBlocked=false;
+            showCrazyLetters=false;
+            modeText.style.display="none";
+        }
+    },1000);
+}
+
+function updateUI(){
+    scoreText.innerText="Очки: "+score;
+    let remain=50-(score%50);
+    if(remain===50) remain=0;
+    healText.innerText="До ❤️: "+remain;
+}
+
+function resizeCanvas(){
+    canvas.width=window.innerWidth;
+    canvas.height=window.innerHeight;
+
+    center.x=canvas.width/2;
+    center.y=canvas.height/2;
+
+    targets.up={x:center.x,y:center.y-120};
+    targets.down={x:center.x,y:center.y+120};
+    targets.left={x:center.x-120,y:center.y};
+    targets.right={x:center.x+120,y:center.y};
+}
+window.addEventListener("resize",resizeCanvas);
+
+function resetGame(){
+    score=0;
+    lives=5;
+    projectileSpeed=3;
+    projectiles=[];
+    explosions=[];
+    crystalDestroyed=false;
+    spawnBlocked=false;
+    showCrazyLetters=true;
+    updateUI();
+}
+
+function showDifficulty(){
+    mainMenu.style.display="none";
+    difficultyMenu.style.display="flex";
+}
+
+function backToDifficultyMenu(){
+    difficultyMenu.style.display="none";
+    mainMenu.style.display="flex";
+}
+
+function startGame(mode){
+    gameMode=mode;
+    resetGame();
+
+    if(mode==="crazy"){
+        generateCrazyKeys();
+        controlsHelp.style.display="none";
+        startCrazyCountdown();
+    }else{
+        modeText.style.display="none";
+        controlsHelp.style.display="block";
+    }
+
+    gameRunning=true;
+    difficultyMenu.style.display="none";
+    gameOverMenu.style.display="none";
+    scoreText.style.display="block";
+    healText.style.display="block";
+}
+
+function restartGame(){
+    startGame(gameMode);
+}
+
+function backToMenu(){
+    gameRunning=false;
+    scoreText.style.display="none";
+    healText.style.display="none";
+    modeText.style.display="none";
+    controlsHelp.style.display="none";
+    gameOverMenu.style.display="none";
+    difficultyMenu.style.display="none";
+    mainMenu.style.display="flex";
+}
+
+function endGame(){
+    crystalDestroyed=true;
+    createExplosion(center.x,center.y,80);
+
+    setTimeout(()=>{
+        gameRunning=false;
+        gameOverMenu.style.display="flex";
+    },800);
+}
+
+function createExplosion(x,y,size){
+    explosions.push({x,y,radius:size,alpha:1});
+}
+
+function drawExplosions(){
+    for(let i=explosions.length-1;i>=0;i--){
+        let e=explosions[i];
+        ctx.beginPath();
+        ctx.fillStyle=`rgba(255,150,0,${e.alpha})`;
+        ctx.arc(e.x,e.y,e.radius,0,Math.PI*2);
+        ctx.fill();
+        e.radius+=2;
+        e.alpha-=0.05;
+        if(e.alpha<=0) explosions.splice(i,1);
+    }
+}
+
+function spawnProjectile(){
+    if(!gameRunning || spawnBlocked) return;
+
+    const dirs=["up","down","left","right"];
+    const dir=dirs[Math.floor(Math.random()*4)];
+
+    let x,y,vx=0,vy=0;
+
+    if(dir==="up"){x=center.x;y=-20;vy=projectileSpeed;}
+    if(dir==="down"){x=center.x;y=canvas.height+20;vy=-projectileSpeed;}
+    if(dir==="left"){x=-20;y=center.y;vx=projectileSpeed;}
+    if(dir==="right"){x=canvas.width+20;y=center.y;vx=-projectileSpeed;}
+
+    projectiles.push({x,y,vx,vy,dir});
+}
+setInterval(spawnProjectile,1000);
+
+function drawDiamond(){
+    if(crystalDestroyed) return;
+
+    ctx.fillStyle="purple";
+    ctx.beginPath();
+    ctx.moveTo(center.x,center.y-40);
+    ctx.lineTo(center.x+40,center.y);
+    ctx.lineTo(center.x,center.y+40);
+    ctx.lineTo(center.x-40,center.y);
+    ctx.closePath();
+    ctx.fill();
+
+    let cracks=maxLives-lives;
+    ctx.strokeStyle="white";
+    ctx.lineWidth=3;
+
+    for(let i=0;i<cracks;i++){
+        ctx.beginPath();
+        ctx.moveTo(center.x,center.y);
+        let angle=i*(Math.PI/2.5);
+        ctx.lineTo(center.x+Math.cos(angle)*45,center.y+Math.sin(angle)*45);
+        ctx.stroke();
+    }
+}
+
+function drawTargets(){
+    ctx.strokeStyle="white";
+    ctx.lineWidth=4;
+    ctx.fillStyle="yellow";
+    ctx.font="30px Arial";
+    ctx.textAlign="center";
+
+    for(let key in targets){
+        let t=targets[key];
+
+        if(pulse[key]>0) pulse[key]-=0.08;
+        let extra=pulse[key]*15;
+
+        ctx.beginPath();
+        ctx.arc(t.x,t.y,25+extra,0,Math.PI*2);
+        ctx.stroke();
+
+        if(gameMode==="crazy" && showCrazyLetters){
+            ctx.fillText(crazyKeys[key],t.x,t.y-40);
+        }
+    }
+}
+
+function drawLives(){
+    for(let i=0;i<lives;i++){
+        ctx.fillStyle="red";
+        ctx.fillRect(canvas.width-220+i*40,20,30,30);
+    }
+}
+
+function loseLife(){
+    lives--;
+    if(lives<=0) endGame();
+}
+
+function healLife(){
+    if(lives<maxLives) lives++;
+}
+
+function updateProjectiles(){
+    if(!gameRunning) return;
+
+    ctx.fillStyle="blue";
+
+    for(let i=projectiles.length-1;i>=0;i--){
+        let p=projectiles[i];
+        p.x+=p.vx;
+        p.y+=p.vy;
+
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,20,0,Math.PI*2);
+        ctx.fill();
+
+        let dist=Math.hypot(p.x-center.x,p.y-center.y);
+
+        if(dist<50){
+            projectiles.splice(i,1);
+            createExplosion(center.x,center.y,20);
+            loseLife();
+        }
+    }
+}
+
+function hit(direction){
+    if(!gameRunning) return;
+
+    pulse[direction]=1;
+
+    for(let i=0;i<projectiles.length;i++){
+        let p=projectiles[i];
+        let t=targets[direction];
+
+        let dist=Math.hypot(p.x-t.x,p.y-t.y);
+
+        if(dist<25 && p.dir===direction){
+            createExplosion(p.x,p.y,15);
+            projectiles.splice(i,1);
+            score++;
+
+            if(score%10===0) projectileSpeed+=0.5;
+            if(score%50===0) healLife();
+
+            updateUI();
+            return;
+        }
+    }
+}
+
+document.addEventListener("keydown",(e)=>{
+    const key=e.key.toLowerCase();
+
+    if(gameMode==="normal"){
+        if(key==="w"||key==="ц"||key==="arrowup") hit("up");
+        if(key==="s"||key==="і"||key==="arrowdown") hit("down");
+        if(key==="a"||key==="ф"||key==="arrowleft") hit("left");
+        if(key==="d"||key==="в"||key==="arrowright") hit("right");
+    }else{
+        if(key===crazyKeys.up.toLowerCase()) hit("up");
+        if(key===crazyKeys.down.toLowerCase()) hit("down");
+        if(key===crazyKeys.left.toLowerCase()) hit("left");
+        if(key===crazyKeys.right.toLowerCase()) hit("right");
+    }
+});
+
+function gameLoop(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawDiamond();
+    drawTargets();
+    drawLives();
+    updateProjectiles();
+    drawExplosions();
+    requestAnimationFrame(gameLoop);
+}
+
+resizeCanvas();
+gameLoop();
+</script>
+</body>
+</html>
